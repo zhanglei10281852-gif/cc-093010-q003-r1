@@ -71,6 +71,16 @@ class PilotRepository:
             params,
         ).fetchone()
 
+    def site_by_code(self, code: str) -> sqlite3.Row | None:
+        return self.connection.execute("SELECT * FROM pilot_sites WHERE code=?", (code,)).fetchone()
+
+    def count_site_occupancy(self, site_code: str) -> int:
+        """正在运行与等待安全停止的场次都占用场地容量。"""
+        return int(self.connection.execute(
+            "SELECT COUNT(*) FROM pilot_sessions WHERE lease_owner=? AND status IN ('running','cancel_requested')",
+            (site_code,),
+        ).fetchone()[0])
+
     def observation_versions(self, session_id: int) -> list[dict[str, Any]]:
         return [dict(row) for row in self.connection.execute("SELECT * FROM pilot_observations WHERE session_id=? ORDER BY version", (session_id,)).fetchall()]
 

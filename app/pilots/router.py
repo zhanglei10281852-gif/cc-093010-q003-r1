@@ -44,7 +44,7 @@ def get_session(session_id: int):
 
 @router.post("/sessions/claim")
 def claim_session(payload: SessionClaim):
-    return {"session": service().claim(payload.site_code, payload.capabilities, payload.lease_seconds)}
+    return service().claim(payload.site_code, payload.capabilities, payload.lease_seconds)
 
 
 @router.post("/sessions/{session_id}/heartbeat")
