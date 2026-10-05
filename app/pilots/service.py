@@ -88,7 +88,34 @@ class PilotOperationsService:
         lease_until = to_storage(now_value + timedelta(seconds=lease_seconds))
         with transaction(immediate=True) as connection:
             repository = PilotRepository(connection)
-            candidate = repository.queued_candidate(capabilities, now)
+            site = repository.site_by_code(site_code)
+            if site is None:
+                raise NotFoundError("试点场地不存在")
+            if site["status"] != "active":
+                reason = "site_suspended" if site["status"] == "suspended" else "site_closed"
+                label = "暂停" if site["status"] == "suspended" else "关闭"
+                raise ConflictError(
+                    f"试点场地已{label}，不能领取体验场次",
+                    context={"reason": reason, "site_code": site_code, "site_status": site["status"]},
+                )
+            occupying = repository.site_active_sessions(site_code)
+            max_concurrent = int(site["max_concurrent"])
+            if len(occupying) >= max_concurrent:
+                raise ConflictError(
+                    "试点场地并发容量已满，不能领取体验场次",
+                    context={
+                        "reason": "site_at_capacity",
+                        "site_code": site_code,
+                        "active_sessions": len(occupying),
+                        "max_concurrent": max_concurrent,
+                    },
+                )
+            registered = set(json.loads(site["capabilities_json"]))
+            requested = {item for item in capabilities if item}
+            effective = sorted(registered & requested) if requested else sorted(registered)
+            if not effective:
+                return None
+            candidate = repository.queued_candidate(effective, now)
             if candidate is None:
                 return None
             cursor = connection.execute(
@@ -98,6 +125,23 @@ class PilotOperationsService:
             if cursor.rowcount != 1:
                 return None
             return dict(repository.session_by_id(candidate["id"]))
+
+    def site_occupancy(self, site_code: str) -> dict[str, Any]:
+        site = self.repository.site_by_code(site_code)
+        if site is None:
+            raise NotFoundError("试点场地不存在")
+        occupying = self.repository.site_active_sessions(site_code)
+        max_concurrent = int(site["max_concurrent"])
+        active = len(occupying)
+        return {
+            "site_code": site["code"],
+            "site_status": site["status"],
+            "capabilities": json.loads(site["capabilities_json"]),
+            "max_concurrent": max_concurrent,
+            "active_sessions": active,
+            "available_slots": max(0, max_concurrent - active) if site["status"] == "active" else 0,
+            "occupying_sessions": occupying,
+        }
 
     def heartbeat(self, session_id: int, site_code: str, lease_seconds: int) -> dict[str, Any]:
         now_value = self.clock.now()

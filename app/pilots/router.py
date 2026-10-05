@@ -47,6 +47,11 @@ def claim_session(payload: SessionClaim):
     return {"session": service().claim(payload.site_code, payload.capabilities, payload.lease_seconds)}
 
 
+@router.get("/sites/{site_code}/occupancy")
+def site_occupancy(site_code: str):
+    return service().site_occupancy(site_code)
+
+
 @router.post("/sessions/{session_id}/heartbeat")
 def heartbeat(session_id: int, payload: SessionClaim):
     return service().heartbeat(session_id, payload.site_code, payload.lease_seconds)

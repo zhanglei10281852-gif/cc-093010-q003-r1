@@ -5,11 +5,26 @@ import sqlite3
 from typing import Any, Iterable
 
 
+# 正在运行和等待安全停止的场次都会占用场地并发容量。
+OCCUPYING_STATUSES = ("running", "cancel_requested")
+
+
 class PilotRepository:
     """封装试点体验场次运营领域的 SQLite 读写。"""
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
+
+    def site_by_code(self, code: str) -> sqlite3.Row | None:
+        return self.connection.execute("SELECT * FROM pilot_sites WHERE code=?", (code,)).fetchone()
+
+    def site_active_sessions(self, site_code: str) -> list[dict[str, Any]]:
+        placeholders = ",".join("?" for _ in OCCUPYING_STATUSES)
+        rows = self.connection.execute(
+            f"SELECT id,status,lease_expires_at,started_at FROM pilot_sessions WHERE lease_owner=? AND status IN ({placeholders}) ORDER BY id",
+            (site_code, *OCCUPYING_STATUSES),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def protocol_by_code(self, code: str) -> sqlite3.Row | None:
         return self.connection.execute("SELECT * FROM pilot_protocols WHERE code=?", (code,)).fetchone()
